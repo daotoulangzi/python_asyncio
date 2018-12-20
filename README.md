@@ -15,7 +15,11 @@ python 中 asyncio 相关的异步编程 & concurrent.futures.ThreadExecutor、P
 ### 2、future
 - 期物对象，`asyncio.Future`
 - 实现了 `__iter__` 方法，故可以对 `future` 对象使用 `yield from future` 语法；
-  - 根据 `__iter__` 方法的实现，可以发现，要获取 `future` 的结果值，需要使用 `send(None)` 驱动。如果 `future` 的状态为 `pending`,则仍然返回该 `future` 对象，且将 `future` 对象的 `_asyncio_future_blocking` 属性设置为 True，在 `task` 的 `_step()` 方法中可以发现,如果 `send(None)` 返回的值 `result` 有 `_asyncio_future_blocking` 属性(表明 `result` 对象是 `future` 对象)，且该属性值为 `True`(表明 `result` 对象的状态为 `pending`)，则将 `_step()` 方法添加到 `result` 对象的回调方法中。即当 `result` 的状态为 `FINISH` 后，调用 `_step()` 将 `result` 的结果值返回。
+  - 根据 `__iter__` 方法的实现，可以发现，要获取 `future` 的结果值，需要使用 `send(None)` 驱动。
+  - 如果 `future` 的状态为 `pending`,则仍然返回该 `future` 对象，且将 `future` 对象的 `_asyncio_future_blocking` 属性设置为 True。
+  - 在 `task` 的 `_step()` 方法中可以发现,
+    - 如果 `send(None)` 返回的值 `result` 有 `_asyncio_future_blocking` 属性(表明 `result` 对象是 `future` 对象)，且该属性值为 `True`(表明 `result` 对象的状态为 `pending`)，则将 `_step()` 方法添加到 `result` 对象的回调方法中。
+    - 当 `result` 的状态为 `FINISH` 后，调用 `_step()` 将 `result` 的结果值返回。
 
 ### 3、task
 - 任务对象，`asyncio.Task`
