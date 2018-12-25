@@ -1,0 +1,59 @@
+### loop
+---
+#### loop 的对象的继承关系
+- `_UnixSelectorEventLoop -> BaseSelectorEventLoop -> BaseEventLoop -> AbstractEventLoop`
+- `AbstractEventLoop` 是抽象基类，事件循环类的属性和方法的定义大都是在这个抽象类中声明，在 `BaseEventLoop` 类中实现。比如：
+  - Running and stopping the eventloop
+    - `run_forever`  # run _run_once() until stop() is called.
+    - `run_until_complete`  # Run until future is done. 内部调用 run_forever
+    - `stop`  # Stop running the event loop
+    - `close`  # Close the event loop. The event loop must not be running.
+    - `shutdown_asyncgens`  # Shutdown all active asynchronous generators
+  - `Methods scheduling callbacks. All these return Handles.`
+    - `call_soon`  # 将回调绑定到 Handle 对象中，并添加到 _ready 队列中
+    - `call_later`  # 调用 call_at
+    - `call_at`  # 将回调绑定到 TimerHandle 对象中，添加到 _scheduled 中
+    - `time`  # 事件循环的时钟时间
+    - `create_task`  # 将协程参数和loop关联生成Task对象
+    - `create_future`  # 创建一个关联 loop 的期物
+- 常用的属性：
+  - _closed
+  - _stopping
+  - _ready = collection.queue()
+  - _scheduled = []
+  - _default_executor
+  - _internal_fds
+  - _thread_id
+  - _clock_resolution = time.get_clock_info('monotonic').resolution  # 时钟分辨率
+  - _selector
+  - 等
+- 常用的设计：
+  - 1、loop 的创建： asyncio.get_event_loop()
+    - 从 events.py 中的全局变量 _running_loop 中取值 running_loop, pid
+    - 如果不存在 running_loop 则使用 DefaultEventLoopPolicy 对象的 get_event_loop() 方法获取 loop 值
+    - 即实例化 _UnixSelectorEventLoop 对象
+  - 2、loop 的启动：
+    - run_forever
+      - 不接受参数，会一直调用 _run_once() 执行，直到 _stopping 值为 True 时停止循环。
+    - run_until_complete
+      - 接受参数 future 或者 coroutine 或者 awaitable 对象，使用 ensure_future()包装成 future,调用 run_forever.
+      - future添加_run_until_complete_cb 为执行完回调方法，此方法会将 _stopping 设置为 True
+    - 总结下来，就是 loop 会一直循环执行 _run_once,直到 loop._stopping 的值为 True.而 _stopping 值一般会在 future 的回调函数中设置。
+- _run_once:
+  - _ready 中存储立即执行的回调，_scheduled 中存储延迟执行的回调
+  - 1、清理 _scheduled 堆中的数据
+    - 如果 _scheduled 中任务大于 100 且 cancelled 的占比大于 0.5，则将 cancelled 的任务过滤掉，只保留有效的任务
+    - 否则将 _scheduled 堆顶的被 cancelled 的任务从 _scheduled 中去掉
+  - 2、如果 _ready 不为空或者 _stopping 值为 True,则将 timeout 值设为0，否则如果 _scheduled 中值存在，则将 timeout 值设置为 max(0, _scheduled[0]._when - self.time())
+  - 3、loop._selector.select(timeout) 获取已就绪的回调事件 event_list
+  - 4、将 event_list 回调事件添加到 _ready 队列中
+  - 5、将 _scheduled 中 _when 小于self.time() + self._clock_resolution 值的回调添加到 _ready 队列中
+  - 6、执行 _ready 队列中的回调（因为queue数据支持并发，故为了避免执行过程中_ready被添加新的回调，会先使用ntodo来确保执行的回调个数）
+---
+#### DefaultSelector
+- 基于select模块的高效多路I/O复用
+- 常用的方法
+  - select()：
+    - 如果设置 timeout 则等待已注册的文件对象准备就绪直到超时
+    - 如果没有设置 timeout,则不会阻塞
+    - 返回(key, events)元组的列表，key 是准备就绪的 SelectorKey 对象,其fileobj 即为注册的文件对象。
